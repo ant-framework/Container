@@ -12,6 +12,7 @@ use Ant\Container\Interfaces\ServiceProviderInterface;
 
 /**
  * 这个是参考Laravel的服务容器进行的开发,相当于laravel的服务容器删减版
+ * Todo::服务获取一次后立刻销毁
  *
  * Class Container
  * @package Ant
@@ -237,7 +238,10 @@ class Container implements ContainerInterface,ArrayAccess
         // 如果已经绑定,删除之前所有的服务实例
         $this->removeStaleInstances($serviceName);
 
-        if(is_null($concrete)){
+        if($concrete instanceof Closure){
+            // 将闭包函数的作用域绑定到服务容器
+            $concrete = $concrete->bindTo($this);
+        }elseif(is_null($concrete)){
             $concrete = $serviceName;
         }
 
@@ -437,8 +441,7 @@ class Container implements ContainerInterface,ArrayAccess
     public function build($concrete, array $parameters = [])
     {
         if ($concrete instanceof Closure) {
-            //将容器交给闭包
-            return $concrete($this, ...$parameters);
+            return $concrete(...$parameters);
         }
         //通过反射机制实现实例
         $reflection = new ReflectionClass($concrete);
@@ -619,9 +622,90 @@ class Container implements ContainerInterface,ArrayAccess
             $func = new ReflectionFunction($callback);
         }
 
-        $parameters = $this->getDependencies($func,array_values($parameters));
+        $parameters = $this->getCallbackDependencies($func,$parameters);
 
         return call_user_func_array($callback,$parameters);
+    }
+
+
+    /**
+     * @param \ReflectionFunctionAbstract $callback
+     * @param array $primitives
+     * @return array
+     */
+    protected function getCallbackDependencies(\ReflectionFunctionAbstract $callback, array $primitives)
+    {
+        $dependencies = [];
+        $parameters = $callback->getParameters();
+
+        foreach($parameters as $parameter) {
+            $this->addDependencyForCallParameter($parameter,$primitives,$dependencies);
+        }
+
+        // 保证默认值不会覆盖用户给定的值
+        $dependencies = $primitives + $dependencies;
+
+        return $this->sortTheDependentParameters($parameters,$dependencies);
+    }
+
+    /**
+     * 添加调用参数的依赖关系
+     *
+     * @param ReflectionParameter $parameter
+     * @param array $parameters
+     * @param $dependencies
+     */
+    protected function addDependencyForCallParameter(ReflectionParameter $parameter, array &$parameters, &$dependencies)
+    {
+        // 同时迭代,如果没有特殊定义,就作为输入值
+        if(list($key,$value) = each($parameters)) {
+            if(is_numeric($key)){
+                $dependencies[$parameter->name] = $value;
+            }
+        }
+
+        if ($class = $parameter->getClass()) {
+            // 从输入参数中查找依赖的对象
+            $dependentClass = null;
+
+            // Todo::fix 因为foreach调用迭代器,从而导致数组指针出现错误
+            foreach($parameters as $key => $item) {
+                if($item instanceof $class->name) {
+                    $dependentClass = $item;
+                    break;
+                }
+            }
+
+            if(!$dependentClass) {
+                // 输入参数中获取失败,从容器中获取依赖的服务实例
+                $dependentClass = $this->make($parameter->getClass()->name);
+            }
+
+            $dependencies[$parameter->name] = $dependentClass;
+        }elseif ($parameter->isDefaultValueAvailable()) {
+            // 获取默认值
+            $dependencies[$parameter->name] = $parameter->getDefaultValue();
+        }
+    }
+
+    /**
+     * 将参数依照依赖的顺序进行排序
+     *
+     * @param $parameters
+     * @param $dependencies
+     * @return array
+     */
+    public function sortTheDependentParameters($parameters,$dependencies)
+    {
+        $result = [];
+        foreach($parameters as $parameter){
+            if (array_key_exists($parameter->name, $dependencies)) {
+                $result[] = $dependencies[$parameter->name];
+                unset($dependencies[$parameter->name]);
+            }
+        }
+
+        return $result;
     }
 
     /**
