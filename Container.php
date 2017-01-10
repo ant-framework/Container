@@ -521,9 +521,7 @@ class Container implements ContainerInterface,ArrayAccess
      */
     protected function keyParametersByArgument(array $dependencies, array $parameters)
     {
-        $count = count($dependencies);
-
-        while($count-- > 0 && list($key,$value) = each($parameters)){
+        foreach($parameters as $key => $value) {
             if (is_numeric($key)) {
                 unset($parameters[$key]);
 
@@ -657,10 +655,10 @@ class Container implements ContainerInterface,ArrayAccess
      */
     protected function addDependencyForCallParameter(ReflectionParameter $parameter, array &$parameters, &$dependencies)
     {
-        // 同时迭代,如果没有特殊定义,就作为输入值
         if(list($key,$value) = each($parameters)) {
-            if(is_numeric($key)){
+            if (is_int($key)) {
                 $dependencies[$parameter->name] = $value;
+                unset($parameters[$key]);
             }
         }
 
@@ -668,10 +666,10 @@ class Container implements ContainerInterface,ArrayAccess
             // 从输入参数中查找依赖的对象
             $dependentClass = null;
 
-            // Todo::fix 因为foreach调用迭代器,从而导致数组指针出现错误
             foreach($parameters as $key => $item) {
                 if($item instanceof $class->name) {
                     $dependentClass = $item;
+                    unset($parameters[$key]);
                     break;
                 }
             }
@@ -682,7 +680,7 @@ class Container implements ContainerInterface,ArrayAccess
             }
 
             $dependencies[$parameter->name] = $dependentClass;
-        }elseif ($parameter->isDefaultValueAvailable()) {
+        }elseif (empty($dependencies[$parameter->name]) && $parameter->isDefaultValueAvailable()) {
             // 获取默认值
             $dependencies[$parameter->name] = $parameter->getDefaultValue();
         }
@@ -695,13 +693,13 @@ class Container implements ContainerInterface,ArrayAccess
      * @param $dependencies
      * @return array
      */
-    public function sortTheDependentParameters($parameters,$dependencies)
+    protected function sortTheDependentParameters($parameters,$dependencies)
     {
         $result = [];
+
         foreach($parameters as $parameter){
             if (array_key_exists($parameter->name, $dependencies)) {
                 $result[] = $dependencies[$parameter->name];
-                unset($dependencies[$parameter->name]);
             }
         }
 
