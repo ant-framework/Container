@@ -620,79 +620,9 @@ class Container implements ContainerInterface,ArrayAccess
             $func = new ReflectionFunction($callback);
         }
 
-        $parameters = $this->getCallbackDependencies($func,$parameters);
+        $parameters = $this->getDependencies($func,$parameters);
 
         return call_user_func_array($callback,$parameters);
-    }
-
-
-    /**
-     * @param \ReflectionFunctionAbstract $callback
-     * @param array $primitives
-     * @return array
-     */
-    protected function getCallbackDependencies(\ReflectionFunctionAbstract $callback, array $primitives)
-    {
-        $dependencies = [];
-        $parameters = $callback->getParameters();
-
-        foreach($parameters as $parameter) {
-            if(list($key,$value) = each($primitives)) {
-                if (is_int($key)) {
-                    $dependencies[$parameter->name] = $value;
-                    unset($primitives[$key]);
-                }
-            }
-
-            if ($class = $parameter->getClass()) {
-                // 从输入参数中查找依赖的对象
-                $dependentClass = null;
-
-                // PHP7 遍历不会影响数组指针,所以此处要改为兼容5.5
-                foreach($primitives as $key => $item) {
-                    if($item instanceof $class->name) {
-                        $dependentClass = $item;
-                        unset($primitives[$key]);
-                        break;
-                    }
-                }
-
-                if(!$dependentClass) {
-                    // 输入参数中获取失败,从容器中获取依赖的服务实例
-                    $dependentClass = $this->make($parameter->getClass()->name);
-                }
-
-                $dependencies[$parameter->name] = $dependentClass;
-            }elseif (empty($dependencies[$parameter->name]) && $parameter->isDefaultValueAvailable()) {
-                // 获取默认值
-                $dependencies[$parameter->name] = $parameter->getDefaultValue();
-            }
-        }
-
-        // 保证默认值不会覆盖用户给定的值
-        $dependencies = $primitives + $dependencies;
-
-        return $this->sortTheDependentParameters($parameters,$dependencies);
-    }
-
-    /**
-     * 将参数依照依赖的顺序进行排序
-     *
-     * @param $parameters
-     * @param $dependencies
-     * @return array
-     */
-    protected function sortTheDependentParameters($parameters,$dependencies)
-    {
-        $result = [];
-
-        foreach($parameters as $parameter){
-            if (array_key_exists($parameter->name, $dependencies)) {
-                $result[] = $dependencies[$parameter->name];
-            }
-        }
-
-        return $result;
     }
 
     /**

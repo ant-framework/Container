@@ -10,5 +10,10 @@
     "psr-4": {
       "Ant\\Container\\": "./"
     }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\": "Tests/"
+    }
   }
 }
